@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quản lý Category - GraphQL</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+</head>
+<body class="container mt-4">
+
+<nav class="mb-3">
+    <a href="/">Trang chủ</a> |
+    <a href="/admin/category">Quản lý Category</a> |
+    <a href="/admin/product">Quản lý Product</a>
+</nav>
+
+<h3>Quản lý Category (GraphQL)</h3>
+
+<div class="row mb-3 g-2">
+    <div class="col-md-4">
+        <input type="text" id="keyword" class="form-control" placeholder="Tìm theo tên category">
+    </div>
+    <div class="col-md-2">
+        <button class="btn btn-primary w-100" id="btnSearch">Tìm kiếm</button>
+    </div>
+    <div class="col-md-4 offset-md-2 text-end">
+        <button class="btn btn-success" id="btnAdd">+ Thêm Category</button>
+    </div>
+</div>
+
+<table class="table table-striped table-bordered align-middle">
+    <thead><tr><th>Id</th><th>Icon</th><th>Tên</th><th>Actions</th></tr></thead>
+    <tbody id="tableBody"></tbody>
+</table>
+
+<nav><ul class="pagination" id="pagination"></ul></nav>
+
+<div class="modal fade" tabindex="-1" id="categoryModal">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Thêm Category</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="c_categoryId">
+        <div class="mb-3">
+          <label class="form-label">Tên Category</label>
+          <input type="text" class="form-control" id="c_categoryName">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Icon (tùy chọn)</label>
+          <input type="file" class="form-control" id="c_iconFile" accept="image/*">
+          <div class="form-text">Khi sửa: để trống nếu muốn giữ icon cũ.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="btnSave">Lưu</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+var GRAPHQL_URL = "/graphql";
+var currentPage = 0;
+var isEditMode = false;
+var cache = {};   // categoryId -> object (dùng cho nút Sửa)
+
+function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+        return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+    });
+}
+
+function gql(query, variables) {
+    return $.ajax({
+        url: GRAPHQL_URL,
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ query: query, variables: variables || {} })
+    }).then(function (resp) {
+        if (resp.errors && resp.errors.length) {
+            return $.Deferred().reject(resp.errors[0].message).promise();
+        }
+        return resp.data;
+    }, function (xhr) {
+        return $.Deferred().reject('Lỗi kết nối server (' + xhr.status + ')').promise();
+    });
+}
+
+function uploadImage(file) {
+    var fd = new FormData();
+    fd.append('file', file);
+    return $.ajax({ url: '/api/upload', type: 'POST', data: fd, processData: false, contentType: false });
+}
+
+function modal() {
+    return bootstrap.Modal.getOrCreateInstance(document.getElementById('categoryModal'));
+}
+
+function searchCategory(page) {
+    currentPage = page;
+    var q = "query($keyword: String, $page: Int, $size: Int) { " +
+        "categoriesSearch(keyword: $keyword, page: $page, size: $size) { " +
+        "content { categoryId categoryName icon } totalPages currentPage } }";
+    gql(q, { keyword: $('#keyword').val(), page: page, size: 5 }).done(function (data) {
+        var res = data.categoriesSearch;
+        // vừa xóa hết dòng ở trang cuối -> lùi 1 trang
+        if (res.content.length === 0 && page > 0) {
+            searchCategory(page - 1);
+            return;
+        }
+        renderTable(res.content);
+        renderPagination(res.totalPages, page);
+    }).fail(function (msg) { alert(msg); });
+}
+
+function renderTable(list) {
+    var tr = [];
+    list.forEach(function (c) {
+        cache[c.categoryId] = c;
+        var icon = c.icon ? '<img src="/admin/products/images/' + encodeURIComponent(c.icon) + '" style="width:50px">' : '';
+        tr.push('<tr><td>' + esc(c.categoryId) + '</td><td>' + icon + '</td><td>' + esc(c.categoryName) + '</td><td>' +
+            '<button class="btn btn-warning btn-sm btn-edit" data-id="' + esc(c.categoryId) + '">Sửa</button> ' +
+            '<button class="btn btn-danger btn-sm btn-delete" data-id="' + esc(c.categoryId) + '">Xóa</button>' +
+            '</td></tr>');
+    });
+    if (list.length === 0) {
+        tr.push('<tr><td colspan="4" class="text-center text-muted">Không có dữ liệu</td></tr>');
+    }
+    $('#tableBody').html(tr.join(''));
+}
+
+function renderPagination(totalPages, page) {
+    var li = [];
+    for (var i = 0; i < totalPages; i++) {
+        li.push('<li class="page-item ' + (i === page ? 'active' : '') + '">' +
+            '<a class="page-link" href="#" data-page="' + i + '">' + (i + 1) + '</a></li>');
+    }
+    $('#pagination').html(li.join(''));
+}
+
+function showCreateModal() {
+    isEditMode = false;
+    $('#c_categoryId').val('');
+    $('#c_categoryName').val('');
+    $('#c_iconFile').val('');
+    $('#modalTitle').text('Thêm Category');
+    modal().show();
+}
+
+function showEditModal(c) {
+    isEditMode = true;
+    $('#c_categoryId').val(c.categoryId);
+    $('#c_categoryName').val(c.categoryName);
+    $('#c_iconFile').val('');
+    $('#modalTitle').text('Cập nhật Category');
+    modal().show();
+}
+
+function doSave(name, iconName) {
+    var input = {
+        categoryId: $('#c_categoryId').val() || null,
+        categoryName: name,
+        icon: iconName
+    };
+    var mutation = isEditMode
+        ? "mutation($category: CategoryInput) { updateCategory(category: $category) { categoryId } }"
+        : "mutation($category: CategoryInput) { createCategory(category: $category) { categoryId } }";
+    gql(mutation, { category: input }).done(function () {
+        modal().hide();
+        searchCategory(isEditMode ? currentPage : 0);
+    }).fail(function (msg) { alert(msg); });
+}
+
+function saveCategory() {
+    var name = $.trim($('#c_categoryName').val());
+    if (!name) {
+        alert('Tên Category không được để trống');
+        return;
+    }
+    var file = $('#c_iconFile')[0].files[0];
+    if (file) {
+        uploadImage(file).done(function (r) {
+            doSave(name, r.fileName);
+        }).fail(function (xhr) {
+            alert((xhr.responseJSON && xhr.responseJSON.message) || 'Lỗi upload icon');
+        });
+    } else {
+        doSave(name, null);
+    }
+}
+
+function deleteCategory(id) {
+    if (!confirm('Bạn có chắc muốn xóa category này?')) return;
+    gql("mutation($id: ID!) { deleteCategoryById(id: $id) }", { id: id }).done(function () {
+        searchCategory(currentPage);
+    }).fail(function (msg) { alert(msg); });
+}
+
+$(document).ready(function () {
+    $('#btnSearch').on('click', function () { searchCategory(0); });
+    $('#btnAdd').on('click', showCreateModal);
+    $('#btnSave').on('click', saveCategory);
+    $('#keyword').on('keypress', function (e) { if (e.which === 13) searchCategory(0); });
+    $('#tableBody').on('click', '.btn-edit', function () { showEditModal(cache[$(this).data('id')]); });
+    $('#tableBody').on('click', '.btn-delete', function () { deleteCategory($(this).data('id')); });
+    $('#pagination').on('click', '.page-link', function (e) {
+        e.preventDefault();
+        searchCategory(parseInt($(this).data('page'), 10));
+    });
+    searchCategory(0);
+});
+</script>
+</body>
+</html>

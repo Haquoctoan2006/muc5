@@ -1,0 +1,30 @@
+type Category {
+    categoryId: ID!
+    categoryName: String!
+    icon: String
+}
+
+input CategoryInput {
+    categoryId: ID
+    categoryName: String!
+    icon: String
+}
+
+type CategoryPage {
+    content: [Category]
+    totalPages: Int
+    totalElements: Int
+    currentPage: Int
+}
+
+extend type Query {
+    categories: [Category]
+    categoryById(id: ID!): Category
+    categoriesSearch(keyword: String, page: Int, size: Int): CategoryPage
+}
+
+extend type Mutation {
+    createCategory(category: CategoryInput): Category
+    updateCategory(category: CategoryInput): Category
+    deleteCategoryById(id: ID!): Boolean
+}

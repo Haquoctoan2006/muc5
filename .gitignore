@@ -1,0 +1,4 @@
+   target/
+   upload-dir/
+   .vscode/
+   *.class

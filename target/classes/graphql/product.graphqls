@@ -1,0 +1,50 @@
+type Product {
+    productId: ID!
+    productName: String!
+    quantity: Int!
+    unitPrice: Float!
+    images: String
+    description: String
+    discount: Float
+    status: Int
+    category: Category
+}
+
+input ProductInput {
+    productId: ID
+    productName: String!
+    quantity: Int!
+    unitPrice: Float!
+    images: String
+    description: String
+    discount: Float
+    status: Int
+    categoryId: ID!
+}
+
+type ProductPage {
+    content: [Product]
+    totalPages: Int
+    totalElements: Int
+    currentPage: Int
+}
+
+extend type Query {
+    # Mục 5: hiển thị tất cả product giá tăng dần
+    productsSortedByPriceAsc: [Product]
+
+    # Mục 5: lấy tất cả product theo 1 category
+    productsByCategory(categoryId: ID!): [Product]
+
+    products: [Product]
+    productById(id: ID!): Product
+
+    # Tìm kiếm có phân trang
+    productsSearch(keyword: String, categoryId: ID, page: Int, size: Int, sortByPrice: String): ProductPage
+}
+
+extend type Mutation {
+    createProduct(product: ProductInput): Product
+    updateProduct(product: ProductInput): Product
+    deleteProductById(id: ID!): Boolean
+}
